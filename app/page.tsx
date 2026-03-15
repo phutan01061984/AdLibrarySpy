@@ -887,14 +887,37 @@ function PivotTableView({
                         <td colSpan={7} className="p-0">
                           <div className="p-4 space-y-3 border-l-2 border-primary/30 ml-4">
                             {(group.ads as any[]).map((ad: any, ai: number) => (
-                              <div key={`${group.creativeId}-${ai}`} className="bg-background/50 rounded-lg p-3 space-y-2">
-                                <div className="flex items-start justify-between gap-4">
+                              <div key={`${group.creativeId}-${ai}`} className="bg-background/50 rounded-lg p-3">
+                                <div className="flex items-start gap-4">
+                                  {/* Thumbnail */}
+                                  {ad.thumbnailUrl && (
+                                    <a
+                                      href={ad.creativeUrl || `https://www.facebook.com/ads/library/?id=${ad.libraryId}`}
+                                      target="_blank"
+                                      rel="noopener noreferrer"
+                                      onClick={e => e.stopPropagation()}
+                                      className="flex-shrink-0 rounded-lg overflow-hidden border border-border/50 hover:border-primary/50 transition-colors group/thumb"
+                                    >
+                                      <img
+                                        src={`/api/proxy-image?url=${encodeURIComponent(ad.thumbnailUrl)}`}
+                                        alt={`Ad ${ad.libraryId}`}
+                                        className="w-32 h-32 object-cover group-hover/thumb:scale-105 transition-transform"
+                                        onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
+                                      />
+                                    </a>
+                                  )}
+                                  {/* Ad Info */}
                                   <div className="flex-1 min-w-0">
                                     <div className="flex items-center gap-2 mb-1">
                                       <span className="font-mono text-xs bg-secondary px-1.5 py-0.5 rounded">ID: {ad.libraryId}</span>
                                       <span className={`badge ${ad.isActive ? "badge-active" : "badge-inactive"}`}>
                                         {ad.isActive ? "active" : "inactive"}
                                       </span>
+                                      {ad.adFormat && ad.adFormat !== 'unknown' && (
+                                        <span className="text-[10px] px-1.5 py-0.5 rounded bg-accent/20 text-accent">
+                                          {ad.adFormat === 'video' ? '🎬' : '🖼️'} {ad.adFormat}
+                                        </span>
+                                      )}
                                       {ad.variantsCount > 1 && (
                                         <span className="text-xs text-muted-foreground">{ad.variantsCount} variants</span>
                                       )}
@@ -911,7 +934,8 @@ function PivotTableView({
                                       {ad.brandName && <span>🏷️ {ad.brandName}</span>}
                                     </div>
                                   </div>
-                                  <div className="flex flex-col gap-1">
+                                  {/* Actions */}
+                                  <div className="flex flex-col gap-1 flex-shrink-0">
                                     <a
                                       href={ad.creativeUrl || `https://www.facebook.com/ads/library/?id=${ad.libraryId}`}
                                       target="_blank"
@@ -1003,6 +1027,7 @@ function PivotTableView({
         <table className="data-table">
           <thead>
             <tr>
+              <th style={{ width: 60 }}>thumbnail</th>
               <th onClick={() => onSort("libraryId")}>library_id</th>
               <th>brand_name</th>
               <th onClick={() => onSort("adCreationTime")}>ad_creation_time</th>
@@ -1014,6 +1039,27 @@ function PivotTableView({
           <tbody>
             {(data.rows || []).map((ad: any) => (
               <tr key={ad.libraryId}>
+                <td className="p-1">
+                  {ad.thumbnailUrl ? (
+                    <a
+                      href={ad.creativeUrl || `https://www.facebook.com/ads/library/?id=${ad.libraryId}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="block w-12 h-12 rounded-md overflow-hidden border border-border/50 hover:border-primary/50 transition-colors"
+                    >
+                      <img
+                        src={`/api/proxy-image?url=${encodeURIComponent(ad.thumbnailUrl)}`}
+                        alt={`Ad ${ad.libraryId}`}
+                        className="w-full h-full object-cover"
+                        onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
+                      />
+                    </a>
+                  ) : (
+                    <div className="w-12 h-12 rounded-md bg-secondary/50 flex items-center justify-center">
+                      <span className="text-[10px] text-muted-foreground">No img</span>
+                    </div>
+                  )}
+                </td>
                 <td className="font-mono text-xs">
                   <a
                     href={ad.creativeUrl || `https://www.facebook.com/ads/library/?id=${ad.libraryId}`}
