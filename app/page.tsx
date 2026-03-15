@@ -152,14 +152,18 @@ export default function DashboardPage() {
     if (!selectedBrand) return;
     setScraping(true);
     try {
-      const res = await fetch(`${API}/scrape/${selectedBrand}`, { method: "POST" });
+      const res = await fetch(`${API}/scrape/${selectedBrand}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ method: "web" }), // Web scrape — no token needed
+      });
       const data = await res.json();
       if (res.ok) {
-        showToast(`Scraped ${data.count} ads`, "success");
+        showToast(`Scraped ${data.count} ads via ${data.method || "web"} scraping`, "success");
         fetchBrands();
         fetchPivotData(selectedBrand);
       } else {
-        showToast(data.error, "error");
+        showToast(data.error || "Scraping failed", "error");
       }
     } catch (e: any) {
       showToast(e.message, "error");
@@ -442,7 +446,7 @@ export default function DashboardPage() {
               className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-primary text-primary-foreground hover:bg-primary/90 transition-colors disabled:opacity-40"
             >
               <RefreshCw className={`w-3.5 h-3.5 ${scraping ? "animate-spin" : ""}`} />
-              {scraping ? "Scraping..." : "Scrape Now"}
+              {scraping ? "Scraping..." : "Scrape Web"}
             </button>
           </div>
         </div>
