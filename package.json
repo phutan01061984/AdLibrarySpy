@@ -1,0 +1,21 @@
+{
+  "name": "ad-library-spy",
+  "version": "1.0.0",
+  "description": "AdLibrarySpy — Meta Ad Library scraper & competitive intelligence dashboard with creative hashing",
+  "main": "server.js",
+  "scripts": {
+    "setup": "npm install && npm install --prefix frontend && echo '✅ Setup complete! Run: npm run dev'",
+    "start": "node server.js",
+    "dev": "npx concurrently -n BE,FE -c cyan,magenta \"node --watch server.js\" \"npm run dev --prefix frontend\"",
+    "server": "node --watch server.js"
+  },
+  "dependencies": {
+    "express": "^4.18.2",
+    "sharp": "^0.33.2",
+    "ws": "^8.16.0",
+    "zod": "^4.3.6"
+  },
+  "devDependencies": {
+    "concurrently": "^9.2.1"
+  }
+}
