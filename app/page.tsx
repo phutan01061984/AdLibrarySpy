@@ -110,14 +110,8 @@ function buildPivotFromAds(ads: Ad[], groupBy: string, sortBy: string, sortOrder
   if (groupBy === "none" || groupBy === "library") {
     // Return flat list
     return {
-      groups: filtered.map(ad => ({
-        creativeId: ad.creativeId || ad.libraryId,
-        brandName: ad.brandName,
-        variantsCount: ad.variantsCount || 1,
-        isActive: ad.isActive,
-        creativeUrls: [ad.creativeUrl],
-        ads: [ad],
-      })),
+      groupBy: "none",
+      rows: filtered,
       totalGroups: filtered.length,
       totalAds: filtered.length,
     };
@@ -154,7 +148,7 @@ function buildPivotFromAds(ads: Ad[], groupBy: string, sortBy: string, sortOrder
     return sortOrder === "desc" ? String(bv).localeCompare(String(av)) : String(av).localeCompare(String(bv));
   });
 
-  return { groups: sorted, totalGroups: sorted.length, totalAds: filtered.length };
+  return { groupBy: "creative", rows: sorted, totalGroups: sorted.length, totalAds: filtered.length };
 }
 
 function buildAnalysisFromAds(ads: Ad[], brandId: string, brandName: string): Analysis {
