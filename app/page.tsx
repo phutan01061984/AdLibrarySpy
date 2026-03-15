@@ -342,6 +342,12 @@ export default function DashboardPage() {
         setHashing(false);
         return;
       }
+      const withThumb = ads.filter((a: any) => a.thumbnailUrl).length;
+      if (withThumb === 0) {
+        showToast("No ads have thumbnail images. Re-scrape to capture thumbnails.", "error");
+        setHashing(false);
+        return;
+      }
       const res = await fetch(`${API}/hash/${selectedBrand}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -349,11 +355,14 @@ export default function DashboardPage() {
       });
       const data = await res.json();
       if (res.ok) {
-        // Update localStorage with hashed ads
-        if (data.updatedAds) {
+        // Update localStorage with hashed ads (creativeId is set by server)
+        if (data.updatedAds && data.updatedAds.length > 0) {
           lsSaveAds(selectedBrand, data.updatedAds);
         }
-        showToast(`Hashed ${data.hashed} thumbnails (${data.failed} failed)`, "success");
+        const msg = data.hashed > 0
+          ? `✅ Hashed ${data.hashed} images (${data.failed} failed, ${data.withThumbnail || withThumb} with thumbnails)`
+          : data.message || `No new images to hash. ${withThumb} thumbnails available.`;
+        showToast(msg, "success");
         loadPivotData(selectedBrand);
       } else {
         showToast(data.error || "Hashing failed", "error");
