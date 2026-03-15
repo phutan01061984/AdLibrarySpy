@@ -43,17 +43,18 @@ export async function POST(
     if (method === 'web' || method === 'auto') {
       if (!isWebScrapeAvailable()) {
         return NextResponse.json({
-          error: 'Web scraping not available. Install Puppeteer: npm install puppeteer\nNote: Only works locally, not on Vercel.',
-          hint: 'Run locally with "npm run dev" and install puppeteer',
+          error: 'Web scraping not available.',
+          hint: 'Chromium packages may not be installed correctly.',
         }, { status: 400 });
       }
 
-      const searchTerm = data.name || brandId;
+      // Allow user to override search term (important: "ILA Vietnam" not "ILAVietnam")
+      const searchTerm = body.searchTerm || data.name || brandId;
       const result = await scrapeAdLibraryPage(searchTerm, brandId, {
         country: body.country || settings.defaultCountry || 'VN',
         pageId: data.pageId || null,
-        maxScrolls: body.maxScrolls || 15,
-        headless: body.headless !== false, // default headless
+        maxScrolls: Math.min(body.maxScrolls || 5, 10), // Cap at 10 for Vercel timeout
+        headless: body.headless !== false,
       });
 
       return NextResponse.json(result);
