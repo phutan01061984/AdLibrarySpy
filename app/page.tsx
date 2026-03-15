@@ -60,6 +60,151 @@ interface Analysis {
 
 type ViewMode = "library" | "creative" | "weekly" | "byCount" | "analysis";
 
+// ===== localStorage Helpers =====
+const LS_BRANDS = "adspy_brands";
+const LS_ADS_PREFIX = "adspy_ads_";
+
+function lsGet<T>(key: string, fallback: T): T {
+  if (typeof window === "undefined") return fallback;
+  try {
+    const v = localStorage.getItem(key);
+    return v ? JSON.parse(v) : fallback;
+  } catch { return fallback; }
+}
+
+function lsSet(key: string, value: any) {
+  if (typeof window === "undefined") return;
+  try { localStorage.setItem(key, JSON.stringify(value)); } catch {}
+}
+
+function lsGetBrands(): Brand[] {
+  return lsGet<Brand[]>(LS_BRANDS, []);
+}
+
+function lsSaveBrands(brands: Brand[]) {
+  lsSet(LS_BRANDS, brands);
+}
+
+function lsGetAds(brandId: string): Ad[] {
+  return lsGet<Ad[]>(LS_ADS_PREFIX + brandId, []);
+}
+
+function lsSaveAds(brandId: string, ads: Ad[]) {
+  lsSet(LS_ADS_PREFIX + brandId, ads);
+}
+
+function lsDeleteBrand(brandId: string) {
+  if (typeof window === "undefined") return;
+  try { localStorage.removeItem(LS_ADS_PREFIX + brandId); } catch {}
+}
+
+function buildPivotFromAds(ads: Ad[], groupBy: string, sortBy: string, sortOrder: string, filterActive: string, search: string) {
+  let filtered = ads;
+  if (filterActive === "active") filtered = filtered.filter(a => a.isActive);
+  if (filterActive === "inactive") filtered = filtered.filter(a => !a.isActive);
+  if (search) {
+    const q = search.toLowerCase();
+    filtered = filtered.filter(a => a.copyText?.toLowerCase().includes(q) || a.libraryId?.includes(q) || a.brandName?.toLowerCase().includes(q));
+  }
+
+  if (groupBy === "none" || groupBy === "library") {
+    // Return flat list
+    return {
+      groups: filtered.map(ad => ({
+        creativeId: ad.creativeId || ad.libraryId,
+        brandName: ad.brandName,
+        variantsCount: ad.variantsCount || 1,
+        isActive: ad.isActive,
+        creativeUrls: [ad.creativeUrl],
+        ads: [ad],
+      })),
+      totalGroups: filtered.length,
+      totalAds: filtered.length,
+    };
+  }
+
+  // Group by creative
+  const groups: Record<string, CreativeGroup> = {};
+  for (const ad of filtered) {
+    const key = ad.creativeId || ad.libraryId;
+    if (!groups[key]) {
+      groups[key] = {
+        creativeId: key,
+        brandName: ad.brandName,
+        variantsCount: 0,
+        ads: [],
+        isActive: ad.isActive,
+        creativeUrls: [],
+      };
+    }
+    groups[key].ads.push(ad);
+    groups[key].variantsCount = (ad.variantsCount || 1);
+    if (ad.creativeUrl && !groups[key].creativeUrls.includes(ad.creativeUrl)) {
+      groups[key].creativeUrls.push(ad.creativeUrl);
+    }
+  }
+
+  let sorted = Object.values(groups);
+  sorted.sort((a, b) => {
+    const av = sortBy === "variantsCount" ? a.variantsCount : a.brandName;
+    const bv = sortBy === "variantsCount" ? b.variantsCount : b.brandName;
+    if (typeof av === "number" && typeof bv === "number") {
+      return sortOrder === "desc" ? bv - av : av - bv;
+    }
+    return sortOrder === "desc" ? String(bv).localeCompare(String(av)) : String(av).localeCompare(String(bv));
+  });
+
+  return { groups: sorted, totalGroups: sorted.length, totalAds: filtered.length };
+}
+
+function buildAnalysisFromAds(ads: Ad[], brandId: string, brandName: string): Analysis {
+  const active = ads.filter(a => a.isActive);
+  const inactive = ads.filter(a => !a.isActive);
+  const creativeMap: Record<string, Ad[]> = {};
+  for (const ad of ads) {
+    const key = ad.creativeId || ad.libraryId;
+    if (!creativeMap[key]) creativeMap[key] = [];
+    creativeMap[key].push(ad);
+  }
+
+  const creativeGroups = Object.entries(creativeMap).map(([id, group]) => ({
+    creativeId: id,
+    brandName: group[0].brandName,
+    variantsCount: group[0].variantsCount || group.length,
+    ads: group,
+    isActive: group.some(a => a.isActive),
+    creativeUrls: group.map(a => a.creativeUrl).filter(Boolean),
+  }));
+
+  const formatDist: Record<string, number> = {};
+  for (const ad of ads) {
+    formatDist[ad.adFormat || "unknown"] = (formatDist[ad.adFormat || "unknown"] || 0) + 1;
+  }
+
+  const wordCount: Record<string, number> = {};
+  for (const ad of ads) {
+    const words = (ad.copyText || "").toLowerCase().split(/\W+/).filter(w => w.length > 3);
+    for (const w of words) wordCount[w] = (wordCount[w] || 0) + 1;
+  }
+  const topWords = Object.entries(wordCount)
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 20)
+    .map(([word, count]) => ({ word, count }));
+
+  return {
+    brandId, brandName,
+    totalAds: ads.length,
+    activeAds: active.length,
+    inactiveAds: inactive.length,
+    totalCreatives: creativeGroups.length,
+    activeCreatives: creativeGroups.filter(g => g.isActive).length,
+    topCreatives: creativeGroups.sort((a, b) => b.variantsCount - a.variantsCount).slice(0, 10),
+    formatDistribution: formatDist,
+    weeklyTrend: {},
+    topWords,
+  };
+}
+
 // ===== Main Page =====
 export default function DashboardPage() {
   const [brands, setBrands] = useState<Brand[]>([]);
@@ -85,83 +230,105 @@ export default function DashboardPage() {
   const [settingsCountry, setSettingsCountry] = useState("VN");
   const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set());
 
-  // Load brands
+  // Load brands from localStorage
   useEffect(() => {
-    fetchBrands();
+    loadBrands();
   }, []);
 
   // Load data when brand or view changes
   useEffect(() => {
     if (selectedBrand) {
       if (viewMode === "analysis") {
-        fetchAnalysis(selectedBrand);
+        loadAnalysis(selectedBrand);
       } else {
-        fetchPivotData(selectedBrand);
+        loadPivotData(selectedBrand);
       }
     }
   }, [selectedBrand, viewMode, sortBy, sortOrder, filterActive, searchQuery]);
 
-  async function fetchBrands() {
-    try {
-      const res = await fetch(`${API}/brands`);
-      const data = await res.json();
-      setBrands(data);
-      if (data.length > 0 && !selectedBrand) {
-        setSelectedBrand(data[0].id);
-      }
-    } catch (e) {
-      showToast("Failed to load brands", "error");
+  function loadBrands() {
+    const data = lsGetBrands();
+    setBrands(data);
+    if (data.length > 0 && !selectedBrand) {
+      setSelectedBrand(data[0].id);
     }
   }
 
-  async function fetchPivotData(brandId: string) {
+  // Alias for compatibility
+  const fetchBrands = loadBrands;
+
+  function loadPivotData(brandId: string) {
     setLoading(true);
-    try {
-      const groupBy = viewMode === "creative" || viewMode === "byCount" ? "creative"
-        : viewMode === "weekly" ? "week"
-        : "none";
-      const params = new URLSearchParams({
-        groupBy,
-        sortBy,
-        sortOrder,
-        ...(filterActive && { filterActive }),
-        ...(searchQuery && { search: searchQuery }),
-      });
-      const res = await fetch(`${API}/pivot/${brandId}?${params}`);
-      const data = await res.json();
-      setPivotData(data);
-    } catch (e) {
-      showToast("Failed to load data", "error");
-    }
+    const ads = lsGetAds(brandId);
+    const groupBy = viewMode === "creative" || viewMode === "byCount" ? "creative"
+      : viewMode === "weekly" ? "week"
+      : "none";
+    const data = buildPivotFromAds(ads, groupBy, sortBy, sortOrder, filterActive, searchQuery);
+    setPivotData(data);
     setLoading(false);
   }
 
-  async function fetchAnalysis(brandId: string) {
+  // Alias for compatibility
+  const fetchPivotData = loadPivotData;
+
+  function loadAnalysis(brandId: string) {
     setLoading(true);
-    try {
-      const res = await fetch(`${API}/analysis/${brandId}`);
-      const data = await res.json();
-      setAnalysis(data);
-    } catch (e) {
-      showToast("Failed to load analysis", "error");
-    }
+    const ads = lsGetAds(brandId);
+    const brand = brands.find(b => b.id === brandId);
+    const data = buildAnalysisFromAds(ads, brandId, brand?.name || brandId);
+    setAnalysis(data);
     setLoading(false);
   }
+
+  // Alias for compatibility
+  const fetchAnalysis = loadAnalysis;
 
   async function handleScrape() {
     if (!selectedBrand) return;
     setScraping(true);
     try {
+      const brand = brands.find(b => b.id === selectedBrand);
       const res = await fetch(`${API}/scrape/${selectedBrand}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ method: "web" }), // Web scrape — no token needed
+        body: JSON.stringify({ method: "web", searchTerm: brand?.name }),
       });
       const data = await res.json();
       if (res.ok) {
+        // Save ads to localStorage
+        const existingAds = lsGetAds(selectedBrand);
+        const newAds: Ad[] = (data.ads || []).map((ad: any) => ({
+          libraryId: ad.libraryId,
+          brandName: ad.brandName || brand?.name || selectedBrand,
+          adCreationTime: ad.adCreationTime || new Date().toISOString(),
+          adFormat: ad.adFormat || "unknown",
+          copyText: ad.copyText || "",
+          creativeId: ad.creativeId || ad.libraryId,
+          creativeUrl: ad.creativeUrl || "",
+          isActive: ad.isActive ?? true,
+          firstSeenAt: ad.firstSeenAt || new Date().toISOString(),
+          lastSeenAt: new Date().toISOString(),
+          variantsCount: ad.variantsCount || 1,
+          thumbnailUrl: ad.thumbnailUrl || null,
+          callToAction: ad.callToAction || "",
+        }));
+        // Merge: update existing, add new
+        const existingMap = new Map(existingAds.map(a => [a.libraryId, a]));
+        for (const ad of newAds) {
+          existingMap.set(ad.libraryId, { ...existingMap.get(ad.libraryId), ...ad });
+        }
+        const mergedAds = Array.from(existingMap.values());
+        lsSaveAds(selectedBrand, mergedAds);
+        
+        // Update brand info
+        const updatedBrands = brands.map(b => 
+          b.id === selectedBrand ? { ...b, adsCount: mergedAds.length, lastScraped: new Date().toISOString() } : b
+        );
+        lsSaveBrands(updatedBrands);
+        setBrands(updatedBrands);
+        
         showToast(`Scraped ${data.count} ads via ${data.method || "web"} scraping`, "success");
-        fetchBrands();
-        fetchPivotData(selectedBrand);
+        loadPivotData(selectedBrand);
       } else {
         showToast(data.error || "Scraping failed", "error");
       }
@@ -189,57 +356,64 @@ export default function DashboardPage() {
     setHashing(false);
   }
 
-  async function handleAddBrand() {
+  function handleAddBrand() {
     if (!newBrandName.trim()) return;
-    try {
-      const res = await fetch(`${API}/brands`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name: newBrandName, pageId: newBrandPageId }),
-      });
-      if (res.ok) {
-        const data = await res.json();
-        showToast(`Added brand: ${data.name}`, "success");
-        setShowAddBrand(false);
-        setNewBrandName("");
-        setNewBrandPageId("");
-        fetchBrands();
-        setSelectedBrand(data.brandId);
-      }
-    } catch (e) {
-      showToast("Failed to add brand", "error");
+    const brandId = newBrandName.trim().toLowerCase().replace(/\s+/g, "-");
+    const existing = lsGetBrands();
+    if (existing.find(b => b.id === brandId)) {
+      showToast("Brand already exists", "error");
+      return;
     }
+    const newBrand: Brand = {
+      id: brandId,
+      name: newBrandName.trim(),
+      pageId: newBrandPageId || "",
+      adsCount: 0,
+      creativesCount: 0,
+      lastScraped: null,
+    };
+    const updated = [...existing, newBrand];
+    lsSaveBrands(updated);
+    setBrands(updated);
+    showToast(`Added brand: ${newBrand.name}`, "success");
+    setShowAddBrand(false);
+    setNewBrandName("");
+    setNewBrandPageId("");
+    setSelectedBrand(brandId);
   }
 
-  async function handleDeleteBrand(id: string) {
+  function handleDeleteBrand(id: string) {
     if (!confirm(`Delete brand "${id}" and all its data?`)) return;
-    try {
-      await fetch(`${API}/brands/${id}`, { method: "DELETE" });
-      showToast("Brand deleted", "success");
-      fetchBrands();
-      if (selectedBrand === id) setSelectedBrand(null);
-    } catch (e) {
-      showToast("Failed to delete", "error");
-    }
+    lsDeleteBrand(id);
+    const updated = lsGetBrands().filter(b => b.id !== id);
+    lsSaveBrands(updated);
+    setBrands(updated);
+    showToast("Brand deleted", "success");
+    if (selectedBrand === id) setSelectedBrand(null);
   }
 
-  async function handleImport() {
+  function handleImport() {
     if (!selectedBrand || !importJson.trim()) return;
     try {
-      const ads = JSON.parse(importJson);
-      const res = await fetch(`${API}/import/${selectedBrand}`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ads: Array.isArray(ads) ? ads : [ads] }),
-      });
-      if (res.ok) {
-        const data = await res.json();
-        showToast(`Imported ${data.total} ads`, "success");
-        setShowImport(false);
-        setImportJson("");
-        fetchPivotData(selectedBrand);
-        fetchBrands();
+      const parsed = JSON.parse(importJson);
+      const adsArr = Array.isArray(parsed) ? parsed : [parsed];
+      const existing = lsGetAds(selectedBrand);
+      const existingMap = new Map(existing.map(a => [a.libraryId, a]));
+      for (const ad of adsArr) {
+        const id = ad.libraryId || ad.id || `import-${Date.now()}-${Math.random()}`;
+        existingMap.set(id, { ...ad, libraryId: id });
       }
+      const merged = Array.from(existingMap.values());
+      lsSaveAds(selectedBrand, merged);
+      const updatedBrands = brands.map(b =>
+        b.id === selectedBrand ? { ...b, adsCount: merged.length } : b
+      );
+      lsSaveBrands(updatedBrands);
+      setBrands(updatedBrands);
+      showToast(`Imported ${adsArr.length} ads`, "success");
+      setShowImport(false);
+      setImportJson("");
+      loadPivotData(selectedBrand);
     } catch (e) {
       showToast("Invalid JSON format", "error");
     }
