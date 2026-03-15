@@ -7,9 +7,23 @@ export async function POST(
   { params }: { params: Promise<{ brandId: string }> }
 ) {
   const { brandId } = await params;
-  const data = getBrandData(brandId);
+  
+  // Try to get ads from request body first (localStorage mode)
+  let ads: any[] = [];
+  try {
+    const body = await request.json();
+    if (body.ads && Array.isArray(body.ads) && body.ads.length > 0) {
+      ads = body.ads;
+    }
+  } catch {}
 
-  if (!data.ads || data.ads.length === 0) {
+  // Fallback to server storage
+  if (ads.length === 0) {
+    const data = getBrandData(brandId);
+    ads = data.ads || [];
+  }
+
+  if (ads.length === 0) {
     return NextResponse.json(
       { error: 'No ads to hash. Scrape or import data first.' },
       { status: 400 }
@@ -17,9 +31,8 @@ export async function POST(
   }
 
   try {
-    const result = await hashBrandThumbnails(brandId, data.ads);
-    saveBrandData(brandId, data);
-    return NextResponse.json({ ...result, totalAds: data.ads.length });
+    const result = await hashBrandThumbnails(brandId, ads);
+    return NextResponse.json({ ...result, updatedAds: ads, totalAds: ads.length });
   } catch (e: any) {
     return NextResponse.json({ error: e.message }, { status: 500 });
   }
