@@ -2,82 +2,84 @@
 
 **Meta Ad Library Scraper & Competitive Intelligence Dashboard**
 
-Cào dữ liệu từ Meta Ad Library, băm thumbnail để nhóm creative, phân tích chiến lược quảng cáo đối thủ.
+Scrape Meta Ad Library data, hash thumbnails with perceptual hashing (dHash), and analyze competitor ad strategies — all in one Next.js app, deployable on Vercel.
 
 ---
 
 ## ✨ Features
 
-### 📊 Pivot Table Views
-- **Library ID by Brand** — Tất cả ads theo brand
-- **Creative ID by Brand** — Nhóm creative (dHash)
-- **Creative ID by Week** — Trend theo tuần
-- **Creative By # of Ads** — Phát hiện ads win (variant count cao = creative hiệu quả)
-- **Analysis Dashboard** — Tổng quan: stats, top creatives, format distribution, keywords
-
-### 🔍 Creative Hashing (dHash)
-- Băm thumbnail image thành fingerprint (16 hex chars)
-- Creative ID format: `{brand}-{hash[:6]}` (VD: `ILAVietnam-fffec0`)
-- Cùng visual = cùng hash, bất kể resize/compress
-- Hamming distance để so sánh similarity
-
-### 📈 Competitive Intelligence
-- **Win Detection**: Creative được nhân bản nhiều = creative win 🏆
-- **Weekly Tracking**: Snapshots tuần để theo dõi trend
-- **Keyword Analysis**: Top keywords trong ad copy
-- **Format Distribution**: Phân bổ Image/Video/Carousel
-- **Active Monitoring**: Ads đang chạy vs đã tắt
-
-### 📥 Data Collection
-- **API Scraping**: Facebook Graph API v19 (cần Access Token)
-- **Manual Import**: Paste JSON data (từ browser hay tool khác)
-- **Thumbnail Hashing**: Download + dHash thumbnails
-
----
+- **5 Pivot Table Views**: Library ID, Creative ID, Weekly Trend, By Variant Count, Analysis Dashboard
+- **Perceptual Image Hashing (dHash)**: Group similar ad creatives automatically
+- **Win Detection**: High variant count = winning creative 🏆
+- **Manual Import**: Paste JSON data from any source
+- **Weekly Snapshots**: Track ad strategy changes over time
+- **Keyword Analysis**: Extract top keywords from ad copy
+- **Brand Comparison**: Compare two competitor strategies side-by-side
+- **Dark Intelligence Theme**: Premium spy-inspired UI
 
 ## 🚀 Quick Start
 
 ```bash
-# Install dependencies
-npm run setup
-
-# Start dev (Backend :4000 + Frontend :4001)
+npm install
 npm run dev
 ```
 
-Mở **http://localhost:4001**
+Open **http://localhost:4001**
 
-## 🔑 Setup Facebook Token
+## 🔑 Environment Variables
 
-1. Vào [developers.facebook.com](https://developers.facebook.com/)
-2. Tạo App → Get Access Token
-3. Paste token vào Settings trong app
+| Variable | Description | Required |
+|----------|-------------|----------|
+| `FACEBOOK_ACCESS_TOKEN` | Meta Graph API token | For API scraping |
+| `DEFAULT_COUNTRY` | Default country code | No (default: VN) |
 
 ## 📐 Architecture
 
+Single Next.js app with API Routes — no separate backend needed.
+
 ```
-┌─────────────────┐    Graph API v19    ┌──────────────┐
-│  Meta Ad Library │ ◄──────────────── │  server.js   │
-│  (facebook.com)  │                    │  :4000 API   │
-└─────────────────┘                     └──────┬───────┘
-                                               │
-     ┌──────────────┐                   ┌──────┴───────┐
-     │  dHash Engine │ ◄── thumbnail ──│  Next.js     │
-     │  (sharp)      │                 │  :4001 UI    │
-     └──────────────┘                   └──────────────┘
+app/
+├── layout.tsx              # Root layout
+├── page.tsx                # Dashboard UI
+├── globals.css             # Dark spy theme
+└── api/
+    ├── brands/route.ts     # GET/POST brands
+    ├── brands/[id]/        # DELETE brand
+    ├── scrape/[brandId]/   # POST scrape from API
+    ├── hash/[brandId]/     # POST hash thumbnails
+    ├── import/[brandId]/   # POST import JSON data
+    ├── ads/[brandId]/      # GET ads list
+    ├── pivot/[brandId]/    # GET pivot table data
+    ├── analysis/[brandId]/ # GET analysis data
+    ├── compare/            # GET compare brands
+    ├── snapshots/[brandId]/# GET/POST snapshots
+    ├── settings/           # GET/POST settings
+    └── status/             # GET system status
+lib/
+├── config.js               # Settings & paths (Vercel-aware)
+├── scraper.js              # Facebook Graph API v19
+├── hasher.js               # dHash perceptual hashing
+├── storage.js              # JSON file storage
+└── analyzer.js             # Creative grouping & intelligence
 ```
+
+## ▲ Deploy on Vercel
+
+1. Push to GitHub
+2. Import repo on [vercel.com/new](https://vercel.com/new)
+3. Set environment variable: `FACEBOOK_ACCESS_TOKEN`
+4. Deploy!
+
+> **Note**: File-based storage uses `/tmp` on Vercel (ephemeral). For persistent data in production, add a database (Vercel KV, Supabase, etc.)
 
 ## ⚡ Tech Stack
 
 | Layer | Technology |
 |-------|-----------|
-| Backend | Node.js + Express 4 |
-| Image Hash | sharp (dHash algorithm) |
-| Storage | JSON files (per-brand) |
-| Frontend | Next.js 16 + React 19 |
+| Framework | Next.js 16 + React 19 |
 | Styling | Tailwind CSS 4 |
-
----
+| Image Hash | sharp (dHash algorithm) |
+| Storage | JSON files (local) / /tmp (Vercel) |
 
 ## 📄 License
 MIT
