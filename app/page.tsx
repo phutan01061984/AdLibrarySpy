@@ -336,13 +336,27 @@ export default function DashboardPage() {
     if (!selectedBrand) return;
     setHashing(true);
     try {
-      const res = await fetch(`${API}/hash/${selectedBrand}`, { method: "POST" });
+      const ads = lsGetAds(selectedBrand);
+      if (ads.length === 0) {
+        showToast("No ads to hash. Scrape first!", "error");
+        setHashing(false);
+        return;
+      }
+      const res = await fetch(`${API}/hash/${selectedBrand}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ads }),
+      });
       const data = await res.json();
       if (res.ok) {
+        // Update localStorage with hashed ads
+        if (data.updatedAds) {
+          lsSaveAds(selectedBrand, data.updatedAds);
+        }
         showToast(`Hashed ${data.hashed} thumbnails (${data.failed} failed)`, "success");
-        fetchPivotData(selectedBrand);
+        loadPivotData(selectedBrand);
       } else {
-        showToast(data.error, "error");
+        showToast(data.error || "Hashing failed", "error");
       }
     } catch (e: any) {
       showToast(e.message, "error");
@@ -829,9 +843,29 @@ function PivotTableView({
                         </span>
                         {isWin && <span className="badge badge-win ml-2">🏆 WIN</span>}
                       </td>
-                      <td className="text-xs text-muted-foreground">
-                        {group.ads.length > 0 && (
-                          <span>{group.ads.length} ads</span>
+                      <td className="text-xs">
+                        {group.creativeUrls && group.creativeUrls.length > 0 ? (
+                          <a
+                            href={group.creativeUrls[0]}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="text-primary hover:underline inline-flex items-center gap-1"
+                            onClick={e => e.stopPropagation()}
+                          >
+                            Preview <ExternalLink className="w-3 h-3" />
+                          </a>
+                        ) : group.ads[0]?.libraryId ? (
+                          <a
+                            href={`https://www.facebook.com/ads/library/?id=${group.ads[0].libraryId}`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="text-primary hover:underline inline-flex items-center gap-1"
+                            onClick={e => e.stopPropagation()}
+                          >
+                            View Ad <ExternalLink className="w-3 h-3" />
+                          </a>
+                        ) : (
+                          <span className="text-muted-foreground">{group.ads.length} ads</span>
                         )}
                       </td>
                       <td>
@@ -848,36 +882,53 @@ function PivotTableView({
                         </div>
                       </td>
                     </tr>
-                    {isExpanded && (group.ads as any[]).map((ad: any, ai: number) => (
-                      <tr key={`${group.creativeId}-${ai}`} className="bg-secondary/20">
-                        <td></td>
-                        <td className="text-xs text-muted-foreground pl-6">{brandName}</td>
-                        <td className="text-xs text-muted-foreground font-mono">{group.creativeId}</td>
-                        <td></td>
-                        <td>
-                          {ad.creativeUrl ? (
-                            <a
-                              href={ad.creativeUrl}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              className="text-xs text-primary hover:underline inline-flex items-center gap-1"
-                              onClick={e => e.stopPropagation()}
-                            >
-                              {ad.creativeUrl.length > 60 ? ad.creativeUrl.substring(0, 60) + '...' : ad.creativeUrl}
-                              <ExternalLink className="w-3 h-3" />
-                            </a>
-                          ) : (
-                            <span className="text-xs text-muted-foreground">—</span>
-                          )}
+                    {isExpanded && (
+                      <tr key={`${group.creativeId}-detail`} className="bg-secondary/10">
+                        <td colSpan={7} className="p-0">
+                          <div className="p-4 space-y-3 border-l-2 border-primary/30 ml-4">
+                            {(group.ads as any[]).map((ad: any, ai: number) => (
+                              <div key={`${group.creativeId}-${ai}`} className="bg-background/50 rounded-lg p-3 space-y-2">
+                                <div className="flex items-start justify-between gap-4">
+                                  <div className="flex-1 min-w-0">
+                                    <div className="flex items-center gap-2 mb-1">
+                                      <span className="font-mono text-xs bg-secondary px-1.5 py-0.5 rounded">ID: {ad.libraryId}</span>
+                                      <span className={`badge ${ad.isActive ? "badge-active" : "badge-inactive"}`}>
+                                        {ad.isActive ? "active" : "inactive"}
+                                      </span>
+                                      {ad.variantsCount > 1 && (
+                                        <span className="text-xs text-muted-foreground">{ad.variantsCount} variants</span>
+                                      )}
+                                    </div>
+                                    {ad.copyText && (
+                                      <p className="text-xs text-foreground/80 leading-relaxed mt-1">
+                                        {ad.copyText.length > 300 ? ad.copyText.substring(0, 300) + '...' : ad.copyText}
+                                      </p>
+                                    )}
+                                    <div className="flex items-center gap-3 mt-2 text-[10px] text-muted-foreground">
+                                      {ad.adCreationTime && (
+                                        <span>📅 {new Date(ad.adCreationTime).toLocaleDateString()}</span>
+                                      )}
+                                      {ad.brandName && <span>🏷️ {ad.brandName}</span>}
+                                    </div>
+                                  </div>
+                                  <div className="flex flex-col gap-1">
+                                    <a
+                                      href={ad.creativeUrl || `https://www.facebook.com/ads/library/?id=${ad.libraryId}`}
+                                      target="_blank"
+                                      rel="noopener noreferrer"
+                                      className="text-xs bg-primary/10 text-primary hover:bg-primary/20 px-3 py-1.5 rounded-md inline-flex items-center gap-1 transition-colors whitespace-nowrap"
+                                      onClick={e => e.stopPropagation()}
+                                    >
+                                      View on Facebook <ExternalLink className="w-3 h-3" />
+                                    </a>
+                                  </div>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
                         </td>
-                        <td>
-                          <span className={`badge ${ad.isActive ? "badge-active" : "badge-inactive"}`}>
-                            {ad.isActive ? "true" : "false"}
-                          </span>
-                        </td>
-                        <td></td>
                       </tr>
-                    ))}
+                    )}
                   </>
                 );
               })}
@@ -954,36 +1005,43 @@ function PivotTableView({
             <tr>
               <th onClick={() => onSort("libraryId")}>library_id</th>
               <th>brand_name</th>
-              <th onClick={() => onSort("creativeId")}>creative_id</th>
               <th onClick={() => onSort("adCreationTime")}>ad_creation_time</th>
               <th>copy_text</th>
-              <th>creative_url</th>
+              <th>preview</th>
               <th onClick={() => onSort("isActive")}>is_active</th>
             </tr>
           </thead>
           <tbody>
             {(data.rows || []).map((ad: any) => (
               <tr key={ad.libraryId}>
-                <td className="font-mono text-xs">{ad.libraryId}</td>
-                <td>{ad.brandName || brandName}</td>
-                <td>
-                  <span className="font-mono text-xs px-1.5 py-0.5 rounded bg-secondary">
-                    {ad.creativeId || "—"}
-                  </span>
+                <td className="font-mono text-xs">
+                  <a
+                    href={ad.creativeUrl || `https://www.facebook.com/ads/library/?id=${ad.libraryId}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-primary hover:underline"
+                  >
+                    {ad.libraryId}
+                  </a>
                 </td>
+                <td className="text-xs">{ad.brandName || brandName}</td>
                 <td className="text-xs text-muted-foreground">{ad.adCreationTime?.substring(0, 10) || "—"}</td>
-                <td className="text-xs max-w-[200px] truncate" title={ad.copyText}>{ad.copyText || "—"}</td>
+                <td className="text-xs max-w-[250px]" title={ad.copyText}>
+                  <div className="truncate">{ad.copyText || "—"}</div>
+                </td>
                 <td>
-                  {ad.creativeUrl ? (
-                    <a href={ad.creativeUrl} target="_blank" rel="noopener noreferrer"
-                      className="text-xs text-primary hover:underline inline-flex items-center gap-1">
-                      View <ExternalLink className="w-3 h-3" />
-                    </a>
-                  ) : "—"}
+                  <a
+                    href={ad.creativeUrl || `https://www.facebook.com/ads/library/?id=${ad.libraryId}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-xs bg-primary/10 text-primary hover:bg-primary/20 px-2 py-1 rounded inline-flex items-center gap-1 transition-colors"
+                  >
+                    View Ad <ExternalLink className="w-3 h-3" />
+                  </a>
                 </td>
                 <td>
                   <span className={`badge ${ad.isActive ? "badge-active" : "badge-inactive"}`}>
-                    {ad.isActive ? "true" : "false"}
+                    {ad.isActive ? "active" : "inactive"}
                   </span>
                 </td>
               </tr>
